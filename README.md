@@ -1,5 +1,7 @@
 # scisolve
 
+[![ci](https://github.com/ShubhamX57/scisolve/actions/workflows/ci.yml/badge.svg)](https://github.com/ShubhamX57/scisolve/actions/workflows/ci.yml)
+
 Solves scientific computing problems by writing and running NumPy/SciPy code in
 a loop, and only reports an answer it has checked in that same session.
 
