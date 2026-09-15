@@ -63,7 +63,11 @@ Rules that are enforced, not merely requested:
 
 2. Print every value you intend to cite. Your answer is checked against captured
    stdout. A number that was computed but never printed will be rejected exactly
-   like an invented one, so print intermediate values you plan to quote.
+   like an invented one, so print intermediate values you plan to quote. Print
+   at full precision — numpy truncates arrays by default, and the check matches
+   to a relative tolerance, so an answer quoting more digits than you printed is
+   only verified to the digits that actually appeared. `print(repr(x))` or
+   `np.set_printoptions(precision=17)` if you intend to quote many digits.
 
 3. Before finishing, run a check that could actually fail. Prefer a check that is
    a different computation: compare against a closed form, a second algorithm, a
