@@ -65,7 +65,7 @@ def scrub(text: str, api_key: str) -> str:
     return KEY_PATTERN.sub("<scrubbed>", text)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, transport=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--name", default="damped_oscillator")
     parser.add_argument("--problem", default=DEFAULT_PROBLEM)
@@ -74,13 +74,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("ANTHROPIC_API_KEY is not set; this script makes a real call.", file=sys.stderr)
-        return 2
+    if transport is None:
+        if not api_key:
+            print("ANTHROPIC_API_KEY is not set; this script makes a real call.", file=sys.stderr)
+            return 2
+        if KEY_PATTERN.fullmatch(api_key) is None or len(api_key) < 40:
+            print(
+                f"ANTHROPIC_API_KEY does not look like a key (length {len(api_key)}). "
+                "If you pasted a placeholder from the docs, the shell took it literally.",
+                file=sys.stderr,
+            )
+            return 2
+        transport = with_retries(HTTPTransport(api_key=api_key))
 
     CASSETTE_DIR.mkdir(parents=True, exist_ok=True)
     figure_dir = CASSETTE_DIR / "_figures"
-    recorder = Recorder(with_retries(HTTPTransport(api_key=api_key)))
+    recorder = Recorder(transport)
 
     print(f"model: {args.model}")
     print(f"problem: {args.problem}\n")
@@ -98,15 +107,31 @@ def main(argv: list[str] | None = None) -> int:
         print(f"turn {index}: stop_reason={turn['response'].get('stop_reason')} blocks={kinds}")
 
     print(f"\nanswer: {solution.answer}")
-    print(f"finished={solution.finished} grounded={solution.grounded} turns={solution.turns}")
+    print(
+        f"finished={solution.finished} grounded={solution.grounded} "
+        f"turns={solution.turns} stop_reason={solution.stop_reason}"
+    )
     if solution.ungrounded:
         print(f"ungrounded: {', '.join(solution.ungrounded)}")
+
+    if not recorder.turns:
+        # Nothing came back at all, so there is nothing to record. Say why
+        # rather than leaving an empty file that looks like a recording.
+        print("\nNo response was received, so no cassette was written.", file=sys.stderr)
+        for note in reversed(solution.transcript):
+            if note.get("role") == "system_note":
+                print(f"reason: {note['content']}", file=sys.stderr)
+                break
+        else:
+            print(f"reason: the loop stopped on {solution.stop_reason}", file=sys.stderr)
+        return 1
 
     cassette = {
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "model": args.model,
         "problem": args.problem,
         "solution": solution_dict(solution),
+        "transcript": list(solution.transcript),
         "turns": recorder.turns,
     }
     path = CASSETTE_DIR / f"{args.name}.json"
