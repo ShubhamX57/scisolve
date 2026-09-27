@@ -10,10 +10,18 @@ signal to rewrite the entry rather than quietly delete it.
 
 ## What is here now
 
-- `grounding_precision_overrun.py` — an answer quoting more digits than were
-  ever printed passes the grounding check.
 - `grounding_structural_integers.py` — an answer made entirely of small
   integers passes with no computation behind it.
+
+## Closed
+
+`closed/` holds entries that have been fixed. They stay as executable
+regression guards, asserting the hole is still shut.
+
+- `closed/grounding_precision_overrun.py` — an answer quoting more digits than
+  were printed used to pass. Now rejected: a literal claiming more significant
+  figures than the number it matched was printed to is reported in
+  `GroundingReport.overprecise`.
 
 Both were found by running the thing, not by reading the code.
 

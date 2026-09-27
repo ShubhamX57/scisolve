@@ -16,6 +16,7 @@ from scisolve.executor import Executor
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 SCRIPTS = sorted(EXAMPLES.glob("*.py"))
 FAILURES = sorted((EXAMPLES / "failures").glob("*.py"))
+CLOSED = sorted((EXAMPLES / "failures" / "closed").glob("*.py"))
 
 
 def run_script(path: Path, figure_dir: Path):
@@ -25,7 +26,7 @@ def run_script(path: Path, figure_dir: Path):
 
 def test_examples_are_present():
     assert len(SCRIPTS) >= 6, f"expected at least six examples, found {[p.name for p in SCRIPTS]}"
-    assert len(FAILURES) >= 2, "the failure gallery needs at least two entries"
+    assert FAILURES or CLOSED, "the failure gallery should not be empty"
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: p.stem)
@@ -43,3 +44,11 @@ def test_recorded_failure_still_fails(script, tmp_path):
     assert "STILL FAILING" in result.stdout, (
         f"{script.name} no longer demonstrates its failure; update the entry"
     )
+
+
+@pytest.mark.parametrize("script", CLOSED, ids=lambda p: p.stem)
+def test_closed_failure_stays_closed(script, tmp_path):
+    """A hole that was fixed must not quietly reopen."""
+    result = run_script(script, tmp_path)
+    assert result.ok, f"{script.name} regressed:\n{result.error}"
+    assert "CLOSED" in result.stdout

@@ -245,7 +245,7 @@ class Agent:
             answer, [run.stdout for run in runs if run.ok], problem=problem
         )
         grounded = report.grounded
-        ungrounded = report.unmatched
+        ungrounded = report.unmatched + report.overprecise
 
         raw = tool_input.get("verification")
         if not isinstance(raw, dict):
@@ -285,11 +285,23 @@ class Agent:
         )
 
         if not grounded:
-            listed = ", ".join(ungrounded)
+            complaints = []
+            if report.unmatched:
+                complaints.append(
+                    "these values do not appear in any output: "
+                    + ", ".join(report.unmatched)
+                    + " -- run code that produces them, or remove them"
+                )
+            if report.overprecise:
+                complaints.append(
+                    "these values claim more significant figures than were printed: "
+                    + ", ".join(report.overprecise)
+                    + " -- print them at full precision (repr, or "
+                    "np.set_printoptions(precision=17)), or round the answer to "
+                    "the digits you actually printed"
+                )
             return _FinishAttempt(
-                answer, verification, grounded, ungrounded,
-                f"these values in your answer do not appear in any output: {listed}. "
-                "Run code that produces them, or remove them from the answer.",
+                answer, verification, grounded, ungrounded, "; ".join(complaints) + "."
             )
 
         return _FinishAttempt(answer, verification, True, (), None)

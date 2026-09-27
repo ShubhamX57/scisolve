@@ -90,9 +90,15 @@ def test_traceback_line_numbers_do_not_ground_anything():
     assert not check_grounding("the root is 37.5", outputs=[]).grounded
 
     # this is exactly why the filtering is the caller's job -- pass a traceback
-    # in and line numbers will ground almost anything:
+    # in and line numbers will still ground a number of matching precision:
     leaky = 'File "<cell>", line 37, in <module>\n  x = 5 / 0\nZeroDivisionError'
-    assert check_grounding("the root is 37.5", outputs=[leaky], rtol=2e-2).grounded
+    assert check_grounding("the root is 37", outputs=[leaky]).grounded
+
+    # the precision rule narrows it: a line number is two digits, so a more
+    # precise claim no longer rides on it
+    report = check_grounding("the root is 37.5", outputs=[leaky], rtol=2e-2)
+    assert not report.grounded
+    assert report.overprecise == ("37.5",)
 
 
 def test_figure_paths_are_not_offered_as_outputs():
@@ -158,3 +164,59 @@ def test_multiple_outputs_are_all_searched():
 def test_matched_reports_the_output_value_not_the_literal():
     report = check_grounding("0.6931", ["0.6931471805599453"])
     assert report.matched[0][1] == 0.6931471805599453
+
+
+# --- precision: an answer may not claim more digits than were printed --------
+
+
+def test_more_digits_than_were_printed_is_rejected():
+    report = check_grounding("the eigenvalue is 1.381966011250105", ["1.38196601"])
+    assert not report.grounded
+    assert report.overprecise == ("1.381966011250105",)
+    assert report.unmatched == (), "the value is traceable; only the extra digits are not"
+
+
+def test_same_precision_is_accepted():
+    assert check_grounding("1.38196601", ["1.38196601"]).grounded
+
+
+def test_fewer_digits_than_were_printed_is_still_fine():
+    report = check_grounding("ln(2) = 0.6931", ["0.6931471805599453"])
+    assert report.grounded
+    assert report.overprecise == ()
+
+
+def test_trailing_zeros_after_a_point_are_formatting_not_precision():
+    assert check_grounding("the mass is 5.00 kg", ["mass = 5.0"]).grounded
+    assert check_grounding("the mass is 5 kg", ["mass = 5.000"]).grounded
+
+
+def test_zeros_before_the_point_are_significant():
+    assert check_grounding("n = 100", ["n = 100.0"]).grounded
+
+
+def test_scientific_and_decimal_notation_compare_on_digits_not_form():
+    assert check_grounding("1.23e-4", ["0.000123"]).grounded
+    assert not check_grounding("1.2345e-4", ["0.000123"]).grounded
+
+
+def test_printing_at_full_precision_lets_the_same_answer_through():
+    truncated = check_grounding("x = 0.3333333333333333", ["x = 0.333333"])
+    assert not truncated.grounded
+
+    full = check_grounding("x = 0.3333333333333333", ["x = 0.3333333333333333"])
+    assert full.grounded
+
+
+def test_overprecise_values_are_listed_separately_from_invented_ones():
+    report = check_grounding(
+        "the root is 1.381966011250105 and the period is 6.2832",
+        ["1.38196601"],
+    )
+    assert report.overprecise == ("1.381966011250105",)
+    assert report.unmatched == ("6.2832",)
+    assert not report.grounded
+
+
+def test_structural_integers_are_unaffected_by_the_precision_rule():
+    assert check_grounding("there are 3 roots", []).grounded

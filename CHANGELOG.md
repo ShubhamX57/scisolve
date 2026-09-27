@@ -34,10 +34,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
   run, scrub the key, replay it forever with no network.
 - CI on Python 3.10–3.13.
 
+### Changed
+- `check_grounding` now rejects a literal that sits within `rtol` of a printed
+  number but claims more significant figures than that number was printed to.
+  `GroundingReport` gains an `overprecise` field listing them, kept separate
+  from `unmatched` because the value is traceable and only the extra digits are
+  not. The re-prompt names which problem it is and how to fix each.
+
 ### Known limitations
 - The loop has not yet run against the live API; `transport.py` is verified
   against the documentation and hand-written fakes only.
-- An answer can quote more significant digits than were printed and still pass
-  the grounding check within `rtol`.
 - An answer composed entirely of bare integers 0–10 passes with no computation
   behind it.

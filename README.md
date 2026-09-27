@@ -150,16 +150,19 @@ literals listed, rather than argued with further.
 - **Coincidence.** An invented value within `rtol` of some unrelated number in
   the output passes.
 - **Prose.** "The solution is stable" carries no digits, so nothing is verified.
-- **Precision.** An answer can quote more digits than were printed and still
-  match within `rtol`.
 - **The right variable.** It matches values, not names. Quoting the residual
   where you meant the root still grounds.
 
-The last two are demonstrated as running code in
-[`examples/failures/`](examples/failures/), along with the case where an answer
-made entirely of small integers passes with no computation behind it. Those
-scripts assert that the failure still happens, so closing a hole breaks the
-build and forces the entry to be rewritten instead of quietly deleted.
+A literal within `rtol` of a printed number that claims more significant
+figures than that number was printed to is rejected separately, in
+`overprecise`: the value is traceable, the extra digits are not.
+
+[`examples/failures/`](examples/failures/) holds these as running code —
+including the case where an answer made entirely of small integers passes with
+no computation behind it. Each asserts that its failure still happens, so
+closing a hole breaks the build and forces the entry to be rewritten instead of
+quietly deleted. `failures/closed/` is where they go once fixed, as regression
+guards.
 
 ## What it isn't
 
