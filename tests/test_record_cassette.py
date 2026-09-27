@@ -92,3 +92,25 @@ def test_ungrounded_run_is_written_but_flagged(rc, tmp_path, capsys):
     assert code == 1, "a run that was not grounded must not exit 0"
     assert (tmp_path / "ungrounded.json").exists(), "there were real turns; keep them"
     assert "belongs in examples/failures/" in capsys.readouterr().err
+
+
+def test_the_run_is_narrated_as_it_happens(rc, capsys):
+    rc.main(["--name", "narrated"], transport=solved_api())
+    out = capsys.readouterr().out
+
+    assert "asking the model (turn 0)" in out
+    assert "tool: run_python" in out
+    assert "tool: finish_solution" in out
+    assert "[0] run_python" in out, "the code cell should stream like it does in the CLI"
+    assert "out 0.6931471805599453" in out, "and so should its output"
+    assert "stop_reason=tool_use" in out
+
+
+def test_quiet_suppresses_narration_but_keeps_the_verdict(rc, capsys):
+    rc.main(["--name", "quiet", "--quiet"], transport=solved_api())
+    out = capsys.readouterr().out
+
+    assert "asking the model" not in out
+    assert "[0] run_python" not in out
+    assert "grounded=True" in out
+    assert "wrote" in out

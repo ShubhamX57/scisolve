@@ -30,8 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scisolve.agent import Agent  # noqa: E402
-from scisolve.cli import solution_dict  # noqa: E402
-from scisolve.executor import Executor  # noqa: E402
+from scisolve.cli import RecordingExecutor, solution_dict  # noqa: E402
 from scisolve.transport import DEFAULT_MODEL, HTTPTransport, with_retries  # noqa: E402
 
 CASSETTE_DIR = Path(__file__).resolve().parent.parent / "tests" / "cassettes"
@@ -45,16 +44,41 @@ DEFAULT_PROBLEM = (
 
 
 class Recorder:
-    """Passes calls through to the real transport, keeping both sides."""
+    """Passes calls through to the real transport, keeping both sides.
 
-    def __init__(self, inner) -> None:
+    Narrates as it goes. A recorder that prints nothing for two minutes is
+    indistinguishable from a hung one, which is how the first real run of this
+    script was read.
+    """
+
+    def __init__(self, inner, *, stream: bool = True) -> None:
         self._inner = inner
+        self._stream = stream
         self.turns: list[dict] = []
 
     def __call__(self, payload: dict) -> dict:
+        if self._stream:
+            print(f"\n--- asking the model (turn {len(self.turns)}) ---", flush=True)
         response = self._inner(payload)
         self.turns.append({"request": payload, "response": response})
+        if self._stream:
+            self._narrate(response)
         return response
+
+    def _narrate(self, response: dict) -> None:
+        for block in response.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and block.get("text", "").strip():
+                print(f"  model: {block['text'].strip()[:400]}", flush=True)
+            elif block.get("type") == "tool_use":
+                print(f"  tool: {block.get('name')}", flush=True)
+        usage = response.get("usage", {})
+        print(
+            f"  stop_reason={response.get('stop_reason')} "
+            f"in={usage.get('input_tokens')} out={usage.get('output_tokens')}",
+            flush=True,
+        )
 
 
 def scrub(text: str, api_key: str) -> str:
@@ -71,7 +95,9 @@ def main(argv: list[str] | None = None, *, transport=None) -> int:
     parser.add_argument("--problem", default=DEFAULT_PROBLEM)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--quiet", action="store_true", help="don't narrate the run")
     args = parser.parse_args(argv)
+    stream = not args.quiet
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if transport is None:
@@ -89,7 +115,7 @@ def main(argv: list[str] | None = None, *, transport=None) -> int:
 
     CASSETTE_DIR.mkdir(parents=True, exist_ok=True)
     figure_dir = CASSETTE_DIR / "_figures"
-    recorder = Recorder(transport)
+    recorder = Recorder(transport, stream=stream)
 
     print(f"model: {args.model}")
     print(f"problem: {args.problem}\n")
@@ -98,13 +124,13 @@ def main(argv: list[str] | None = None, *, transport=None) -> int:
         model=args.model,
         max_turns=args.max_turns,
         transport=recorder,
-        executor=Executor(figure_dir=figure_dir, timeout=60.0),
+        executor=RecordingExecutor(stream=stream, figure_dir=figure_dir, timeout=60.0),
     ).solve(args.problem)
 
-    for index, turn in enumerate(recorder.turns):
-        blocks = turn["response"].get("content", [])
-        kinds = [block.get("type") for block in blocks if isinstance(block, dict)]
-        print(f"turn {index}: stop_reason={turn['response'].get('stop_reason')} blocks={kinds}")
+    tokens_in = sum(t["response"].get("usage", {}).get("input_tokens", 0) for t in recorder.turns)
+    tokens_out = sum(t["response"].get("usage", {}).get("output_tokens", 0) for t in recorder.turns)
+    if tokens_in or tokens_out:
+        print(f"\ntokens: {tokens_in:,} in, {tokens_out:,} out")
 
     print(f"\nanswer: {solution.answer}")
     print(
