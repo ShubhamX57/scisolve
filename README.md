@@ -2,36 +2,24 @@
 
 [![ci](https://github.com/ShubhamX57/scisolve/actions/workflows/ci.yml/badge.svg)](https://github.com/ShubhamX57/scisolve/actions/workflows/ci.yml)
 
-Solves scientific computing problems - ODEs, optimization, curve fitting, linear
-algebra, statistics - by writing and running NumPy/SciPy code in a loop, and
+Solves scientific computing problems — ODEs, optimization, curve fitting, linear
+algebra, statistics — by writing and running NumPy/SciPy code in a loop, and
 refuses to report a number it did not compute in that session.
 
 > **scisolve executes model-generated code in your own Python process.** Treat it
 > like running a script a stranger emailed you. Don't point it at untrusted
 > problem statements.
 
-## Status
-
-Milestones 0–5 of 7 are done: the executor, the grounding check, the agent loop,
-the CLI, and seven self-verifying examples. 122 tests, all passing on Python
-3.10 through 3.13, none of them requiring an API key.
-
-**The loop has never run against the live API.** Every test drives it through a
-scripted transport. The wire format is written from the current Messages API
-documentation, and a fake cannot tell you the documentation is right. Until that
-smoke test happens, treat `transport.py` as unverified against the real thing,
-and treat this README's claims about end-to-end behaviour as claims about code
-that passes its own tests rather than code anyone has watched work.
-
-A recorded demo goes here once there is a real run to record.
-
 ## The one rule
 
 Every number in a scisolve answer must be traceable to output captured from a
 `run_python` call in the same session.
 
-This is enforced in `scisolve/grounding.py`, not requested in a prompt. It is the
-only thing here that a weekend API wrapper doesn't have.
+This is enforced in `scisolve/grounding.py`, not requested in a prompt. Before an
+answer is accepted, every numeric literal in it is matched against stdout from
+the cells that actually succeeded. Anything unmatched goes back to the model
+naming the specific value, and an answer that fails twice is returned marked
+ungrounded with the offending numbers listed rather than presented as a result.
 
 Each solution also has to name the check it ran, from a fixed list:
 
@@ -63,7 +51,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 scisolve "find the eigenvalues of [[2,1],[1,3]] and verify them"
 ```
 
-Turns stream as they happen - the code, then its output:
+Turns stream as they happen — the code, then its output:
 
 ```
 problem: find the eigenvalues of [[2,1],[1,3]] and verify them
@@ -81,14 +69,14 @@ problem: find the eigenvalues of [[2,1],[1,3]] and verify them
   out det check 5.000000000000001 5.0
 
 answer: The eigenvalues are 1.381966011250105 and 3.618033988749895.
-checked: invariant - trace and determinant match the sum and product of the
+checked: invariant — trace and determinant match the sum and product of the
 eigenvalues (evidence: run_python call 1)
 run: runs/2026-09-16T10-23-45Z
 ```
 
 That transcript came from the test harness driving the loop with scripted model
-turns. The code ran and the numbers are real; the model's side was scripted, not
-generated. It shows the shape of a run, not evidence that a model produces one.
+turns: the code ran and the numbers are real, but the model's side was written
+rather than generated. See Status, below.
 
 From Python:
 
@@ -122,16 +110,31 @@ cells/            each code cell as a numbered file, failed ones included
 figures/          anything the session plotted
 ```
 
-This is written even when the run fails - an API error or a `max_turns` exit
+This is written even when the run fails — an API error or a `max_turns` exit
 still leaves a complete directory. An answer you cannot retrace is the thing
 this project exists to avoid.
+
+## Status
+
+Everything but the live run: the executor, the grounding check, the agent loop,
+the CLI and its audit trail, seven self-verifying examples, a failure gallery,
+and the docs. 139 tests on Python 3.10 through 3.13, none of them requiring an
+API key. Four more are written and skipped, waiting on a recording.
+
+**The loop has not yet run against the live API.** Every test drives it through a
+scripted transport, and a fake cannot tell you that the wire format it was
+written from is still right. Until a recording exists, `transport.py` is verified
+against the documentation rather than against the service, and the transcript
+above shows the shape of a run rather than evidence that a model produces one.
+
+A recorded demo goes here once there is a real run to record.
 
 ## How the grounding check works
 
 Numeric literals are pulled out of the answer (decimals, scientific notation,
 thousands separators, percentages) and each one has to match a number from:
 
-- stdout of cells that **succeeded** - tracebacks are excluded, since line
+- stdout of cells that **succeeded** — tracebacks are excluded, since line
   numbers and array shapes would ground almost anything
 - the problem statement itself
 - or be a bare integer from 0 to 10, which are usually structural ("three
@@ -150,16 +153,19 @@ literals listed, rather than argued with further.
 - **Coincidence.** An invented value within `rtol` of some unrelated number in
   the output passes.
 - **Prose.** "The solution is stable" carries no digits, so nothing is verified.
-- **Precision.** An answer can quote more digits than were printed and still
-  match within `rtol`.
 - **The right variable.** It matches values, not names. Quoting the residual
   where you meant the root still grounds.
 
-The last two are demonstrated as running code in
-[`examples/failures/`](examples/failures/), along with the case where an answer
-made entirely of small integers passes with no computation behind it. Those
-scripts assert that the failure still happens, so closing a hole breaks the
-build and forces the entry to be rewritten instead of quietly deleted.
+A literal within `rtol` of a printed number that claims more significant
+figures than that number was printed to is rejected separately, in
+`overprecise`: the value is traceable, the extra digits are not.
+
+[`examples/failures/`](examples/failures/) holds these as running code —
+including the case where an answer made entirely of small integers passes with
+no computation behind it. Each asserts that its failure still happens, so
+closing a hole breaks the build and forces the entry to be rewritten instead of
+quietly deleted. `failures/closed/` is where they go once fixed, as regression
+guards.
 
 ## What it isn't
 
@@ -179,16 +185,23 @@ build and forces the entry to be rewritten instead of quietly deleted.
 
 ## Isn't this just an API wrapper?
 
-Mostly, plus two things. The session is persistent, so variables, imports and
-fitted models survive between calls and the model builds on its own state rather
-than re-deriving it in every cell. And the grounding check is enforced in code:
-a `finish_solution` whose numbers are not in the session's captured output is
-rejected and sent back, and if it fails twice the answer is returned marked
-ungrounded rather than presented as a result.
+It calls one API, and two things sit on top of it that change what comes back.
 
-Take that as a description of what the code does, which the test suite covers,
-not as a claim about how often it helps in practice. That claim needs the real
-runs, and they haven't happened.
+The session is persistent. Variables, imports and fitted models survive between
+calls, so the model builds on its own state instead of re-deriving it in every
+cell — and the verification step can use what the solution step left behind.
+
+The grounding check runs in code rather than in the prompt. A `finish_solution`
+whose numbers are not in the session's captured output is rejected and sent back
+naming the specific value; if the second attempt still fails, the answer comes
+back `grounded=False` with the offending literals listed and the CLI exits 1.
+Each solution also has to name which check it ran and point at the cell that
+produced it, and that is validated too.
+
+So what you get back is not the model's answer, it is the model's answer plus a
+machine-checked claim about where each number in it came from. That describes
+what the code does, which the test suite covers. How much it helps in practice
+is a separate question and needs real runs.
 
 ## Why not just use Jupyter?
 
@@ -198,13 +211,13 @@ it yourself then Jupyter plus your own judgement is strictly better than this.
 scisolve is for when you want the checking to be mechanical rather than
 attentive: when the thing producing the answer is a language model that will
 write a plausible number if you let it, and you want that failure mode closed off
-by code rather than by remembering to look. The audit trail is the other half -
+by code rather than by remembering to look. The audit trail is the other half —
 every claim in `runs/` has its cell, its output and its check sitting next to it.
 
 ## Examples
 
 Seven, across genuinely different domains, each one checked by a computation
-different from the one it is checking - a closed form, a conservation law, an
+different from the one it is checking — a closed form, a conservation law, an
 independent algorithm, or a measured convergence rate against a predicted one.
 `tests/test_examples.py` re-runs all of them in CI with no API key, so a wrong
 answer fails the build.
@@ -213,12 +226,8 @@ See [`examples/README.md`](examples/README.md).
 
 ## Contributing
 
-`CONTRIBUTING.md` lands with the milestone 7 docs pass. Until then: run
-`python -m pytest` and `ruff check .` before opening anything, put a test
-alongside any change to `executor.py`, `agent.py` or `grounding.py`, and give a
-new example a real check - a closed form, a conservation law, or an independent
-method. If the only way you can verify it is to run the same computation twice,
-it is not an example yet.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers running the tests, the bar a new
+example has to clear, and the changes that need a decision rather than a commit.
 
 The one rule is not negotiable. A change that weakens the grounding check has to
 say so out loud in the pull request rather than arriving as a refactor.
